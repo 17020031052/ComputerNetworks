@@ -1,244 +1,229 @@
 #include <iostream>
-#include <winsock2.h>       
+#include <winsock2.h>
 #include <ws2tcpip.h>
+#pragma comment(lib,"ws2_32.lib")
+
 using namespace std;
 
-#pragma comment(lib, "Ws2_32.lib")
+//IP±¨Í·
 
-//IPæŠ¥å¤´
-typedef struct IP_HEADER
+typedef struct
 {
-    unsigned char hdr_len:4;       //4ä½å¤´éƒ¨é•¿åº¦
-    unsigned char version:4;       //4ä½ç‰ˆæœ¬å·
-    unsigned char tos;             //8ä½æœåŠ¡ç±»å‹
-    unsigned short total_len;      //16ä½æ€»é•¿åº¦
-    unsigned short identifier;     //16ä½æ ‡è¯†ç¬¦
-    unsigned short frag_and_flags; //3ä½æ ‡å¿—åŠ 13ä½ç‰‡åç§»
-    unsigned char ttl;             //8ä½ç”Ÿå­˜æ—¶é—´
-    unsigned char protocol;        //8ä½ä¸Šå±‚åè®®å·
-    unsigned short checksum;       //16ä½æ ¡éªŒå’Œ
-    unsigned long sourceIP;        //32ä½æºIPåœ°å€
-    unsigned long destIP;          //32ä½ç›®çš„IPåœ°å€
+    unsigned char hdr_len:4;         //4Î»Í·²¿³¤¶È
+    unsigned char version:4;         //4Î»°æ±¾ºÅ
+    unsigned char tos;               //8Î»·şÎñÀàĞÍ
+    unsigned short total_len;        //16Î»×Ü³¤¶È
+    unsigned short identifier;       //16Î»±êÊ¶·û
+    unsigned short frag_and_flags;   //3Î»±êÖ¾¼Ó13Î»Æ¬Æ«ÒÆ
+    unsigned char ttl;               //8Î»Éú´æÊ±¼ä
+    unsigned char protocol;          //8Î»ÉÏ²ãĞ­ÒéºÅ
+    unsigned short checksum;         //16Î»Ğ§ÑéºÍ
+    unsigned long sourceIP;          //32Î»Ô´IPµØÖ·
+    unsigned long destIP;            //32Î»Ä¿µÄIPµØÖ·
 } IP_HEADER;
 
-//ICMPæŠ¥å¤´
-typedef struct ICMP_HEADER
+//ICMP±¨Í·
+
+typedef struct
 {
-    BYTE type;    //8ä½ç±»å‹å­—æ®µ
-    BYTE code;    //8ä½ä»£ç å­—æ®µ
-    USHORT cksum; //16ä½æ ¡éªŒå’Œ
-    USHORT id;    //16ä½æ ‡è¯†ç¬¦
-    USHORT seq;   //16ä½åºåˆ—å·
+    BYTE type;     //8Î»ÀàĞÍ×Ö¶Î
+    BYTE code;     //8Î»´úÂë×Ö¶Î
+    USHORT cksum;  //16Î»Ğ§ÑéºÍ
+    USHORT id;     //16Î»±êÊ¶·û
+    USHORT seq;    //16Î»ĞòÁĞºÅ
 } ICMP_HEADER;
 
-//æŠ¥æ–‡è§£ç ç»“æ„
-typedef struct DECODE_RESULT
-{
-    USHORT usSeqNo;        //åºåˆ—å·
-    DWORD dwRoundTripTime; //å¾€è¿”æ—¶é—´
-    in_addr dwIPaddr;      //è¿”å›æŠ¥æ–‡çš„IPåœ°å€
-}DECODE_RESULT;
+//±¨ÎÄ½âÂë½á¹¹
 
-//è®¡ç®—ç½‘é™…æ ¡éªŒå’Œå‡½æ•°
-USHORT checksum( USHORT *pBuf, int iSize )
+typedef struct
 {
-    unsigned long cksum = 0;
-    while( iSize > 1 )
+    USHORT usSeqNo;          //ĞòÁĞºÅ
+    DWORD dwRoundTripTime;   //·µ»ØÊ±¼ä
+    in_addr dwIPaddr;        //·µ»Ø±¨ÎÄµÄIPµØÖ·
+} DECODE_RESULT;
+
+//¼ÆËãÍø¼ÊĞ§ÑéºÍº¯Êı
+
+USHORT checksum(USHORT *pBuf,int iSize)
+{
+    unsigned long cksum=0;
+    while(iSize>1)
     {
-        cksum += *pBuf++;
-        iSize -= sizeof(USHORT);
+        cksum+=*pBuf++;
+        iSize-=sizeof(USHORT);
     }
-    if( iSize )//å¦‚æœ iSize ä¸ºæ­£ï¼Œå³ä¸ºå¥‡æ•°ä¸ªå­—èŠ‚
+    if(iSize)
     {
-        cksum += *(UCHAR *)pBuf; //åˆ™åœ¨æœ«å°¾è¡¥ä¸Šä¸€ä¸ªå­—èŠ‚ï¼Œä½¿ä¹‹æœ‰å¶æ•°ä¸ªå­—èŠ‚
+        cksum+=*(USHORT*)pBuf;
     }
-    cksum  = ( cksum >> 16 ) + ( cksum&0xffff );
-    cksum += ( cksum >> 16 );
-    return (USHORT)( ~cksum );
+    cksum=(cksum>>16)+(cksum&0xffff);
+    cksum+=(cksum>>16);
+    return(USHORT)(~cksum);
 }
 
-//å¯¹æ•°æ®åŒ…è¿›è¡Œè§£ç 
-BOOL DecodeIcmpResponse(char * pBuf, int iPacketSize, DECODE_RESULT &DecodeResult,
-                        BYTE ICMP_ECHO_REPLY, BYTE  ICMP_TIMEOUT)
+//¶ÔÊı¾İ°ü½øĞĞ½âÂë
+
+BOOL DecodeIcmpResponse(char *pBuf,int iPacketSize,DECODE_RESULT &DecodeResult,BYTE ICMP_ECHO_REPLY,BYTE ICMP_TIMEOUT)
 {
-    //æ£€æŸ¥æ•°æ®æŠ¥å¤§å°çš„åˆæ³•æ€§
-    IP_HEADER* pIpHdr = ( IP_HEADER* )pBuf;
-    int iIpHdrLen = pIpHdr->hdr_len * 4;    //ipæŠ¥å¤´çš„é•¿åº¦æ˜¯ä»¥4å­—èŠ‚ä¸ºå•ä½çš„
-
-    //è‹¥æ•°æ®åŒ…å¤§å° å°äº IPæŠ¥å¤´ + ICMPæŠ¥å¤´ï¼Œåˆ™æ•°æ®æŠ¥å¤§å°ä¸åˆæ³•
-    if ( iPacketSize < ( int )( iIpHdrLen + sizeof( ICMP_HEADER ) ) )
+    //¼ì²éÊı¾İ±¨´óĞ¡µÄºÏ·¨ĞÔ
+    IP_HEADER *pIpHdr=(IP_HEADER*)pBuf;
+    int iIpHdrLen=pIpHdr->hdr_len*4;
+    if(iPacketSize<(int)(iIpHdrLen+sizeof(ICMP_HEADER)))
         return FALSE;
-
-    //æ ¹æ®ICMPæŠ¥æ–‡ç±»å‹æå–IDå­—æ®µå’Œåºåˆ—å·å­—æ®µ
-    ICMP_HEADER *pIcmpHdr = ( ICMP_HEADER * )( pBuf + iIpHdrLen );//ICMPæŠ¥å¤´ = æ¥æ”¶åˆ°çš„ç¼“å†²æ•°æ® + IPæŠ¥å¤´
-    USHORT usID, usSquNo;
-
-    if( pIcmpHdr->type == ICMP_ECHO_REPLY )    //ICMPå›æ˜¾åº”ç­”æŠ¥æ–‡
+    //¸ù¾İICMP±¨ÎÄÀàĞÍÌáÈ¡ID×Ö¶ÎºÍĞòÁĞºÅ×Ö¶Î
+    ICMP_HEADER *pIcmpHdr=(ICMP_HEADER*)(pBuf+iIpHdrLen);
+    USHORT usID,usSquNo;
+    if(pIcmpHdr->type==ICMP_ECHO_REPLY)    //ICMP»ØÏÔÓ¦´ğ±¨ÎÄ
     {
-        usID = pIcmpHdr->id;        //æŠ¥æ–‡ID
-        usSquNo = pIcmpHdr->seq;    //æŠ¥æ–‡åºåˆ—å·
+        usID=pIcmpHdr->id;   //±¨ÎÄID
+        usSquNo=pIcmpHdr->seq;  //±¨ÎÄĞòÁĞºÅ
     }
-    else if( pIcmpHdr->type == ICMP_TIMEOUT )//ICMPè¶…æ—¶å·®é”™æŠ¥æ–‡
+    else if(pIcmpHdr->type==ICMP_TIMEOUT)   //ICMP³¬Ê±²î´í±¨ÎÄ
     {
-        char * pInnerIpHdr = pBuf + iIpHdrLen + sizeof( ICMP_HEADER ); //è½½è·ä¸­çš„IPå¤´
-        int iInnerIPHdrLen = ( ( IP_HEADER * )pInnerIpHdr )->hdr_len * 4; //è½½è·ä¸­çš„IPå¤´é•¿
-        ICMP_HEADER * pInnerIcmpHdr = ( ICMP_HEADER * )( pInnerIpHdr + iInnerIPHdrLen );//è½½è·ä¸­çš„ICMPå¤´
-
-        usID = pInnerIcmpHdr->id;        //æŠ¥æ–‡ID
-        usSquNo = pInnerIcmpHdr->seq;    //åºåˆ—å·
+        char *pInnerIpHdr=pBuf+iIpHdrLen+sizeof(ICMP_HEADER);  //ÔØºÉÖĞµÄIPÍ·
+        int iInnerIPHdrLen=((IP_HEADER*)pInnerIpHdr)->hdr_len*4; //ÔØºÉÖĞµÄIPÍ·³¤
+        ICMP_HEADER *pInnerIcmpHdr=(ICMP_HEADER*)(pInnerIpHdr+iInnerIPHdrLen);//ÔØºÉÖĞµÄICMPÍ·
+        usID=pInnerIcmpHdr->id;  //±¨ÎÄID
+        usSquNo=pInnerIcmpHdr->seq;  //ĞòÁĞºÅ
     }
     else
     {
         return false;
     }
-
-    //æ£€æŸ¥IDå’Œåºåˆ—å·ä»¥ç¡®å®šæ”¶åˆ°æœŸå¾…æ•°æ®æŠ¥
-    if( usID != ( USHORT )GetCurrentProcessId() || usSquNo != DecodeResult.usSeqNo )
+    //¼ì²éIDºÍĞòÁĞºÅÒÔÈ·¶¨ÊÕµ½ÆÚ´ıÊı¾İ±¨
+    if(usID!=(USHORT)GetCurrentProcessId()||usSquNo!=DecodeResult.usSeqNo)
     {
         return false;
     }
-    //è®°å½•IPåœ°å€å¹¶è®¡ç®—å¾€è¿”æ—¶é—´
-    DecodeResult.dwIPaddr.s_addr = pIpHdr->sourceIP;
-    DecodeResult.dwRoundTripTime = GetTickCount() - DecodeResult.dwRoundTripTime;
-
-    //å¤„ç†æ­£ç¡®æ”¶åˆ°çš„ICMPæ•°æ®æŠ¥
-    if ( pIcmpHdr->type == ICMP_ECHO_REPLY || pIcmpHdr->type == ICMP_TIMEOUT )
+    //¼ÇÂ¼IPµØÖ·²¢¼ÆËãÍù·µÊ±¼ä
+    DecodeResult.dwIPaddr.s_addr=pIpHdr->sourceIP;
+    DecodeResult.dwRoundTripTime=GetTickCount()-DecodeResult.dwRoundTripTime;
+    //´¦ÀíÕıÈ·ÊÕµ½µÄICMPÊı¾İ±¨
+    if(pIcmpHdr->type==ICMP_ECHO_REPLY||pIcmpHdr->type==ICMP_TIMEOUT)
     {
-        //è¾“å‡ºå¾€è¿”æ—¶é—´ä¿¡æ¯
+        //Êä³öÍù·µÊ±¼äĞÅÏ¢
         if(DecodeResult.dwRoundTripTime)
-            cout<<"      "<<DecodeResult.dwRoundTripTime<<"ms"<<flush;
+            cout<<"    "<<DecodeResult.dwRoundTripTime<<"ms"<<flush;
         else
-            cout<<"      "<<"<1ms"<<flush;
+            cout<<"    "<<"<1ms"<<flush;
     }
     return true;
 }
 
-void main()
+int main()
 {
-    //åˆå§‹åŒ–Windows socketsç½‘ç»œç¯å¢ƒ
+    //³õÊ¼»¯Windows socketsÍøÂç»·¾³
     WSADATA wsa;
-    WSAStartup( MAKEWORD(2,2), &wsa );
+    WSAStartup(MAKEWORD(2,2),&wsa);
     char IpAddress[255];
-    cout<<"è¯·è¾“å…¥ä¸€ä¸ªIPåœ°å€æˆ–åŸŸåï¼š";
+    cout<<"ÇëÊäÈëÒ»¸öIPµØÖ·»òÓòÃû£º";
     cin>>IpAddress;
-
-    //å¾—åˆ°IPåœ°å€
-    u_long ulDestIP = inet_addr( IpAddress );
-
-    //è½¬æ¢ä¸æˆåŠŸæ—¶æŒ‰åŸŸåè§£æ
-    if( ulDestIP == INADDR_NONE )
+    //µÃµ½IPµØÖ·
+    u_long ulDestIP=inet_addr(IpAddress);
+    //×ª»»²»³É¹¦Ê±°´ÓòÃû½âÎö
+    if(ulDestIP==INADDR_NONE)
     {
-        hostent * pHostent = gethostbyname( IpAddress );
-        if( pHostent )
+        hostent *pHostent=gethostbyname(IpAddress);
+        if(pHostent)
         {
-            ulDestIP = ( *( in_addr* )pHostent->h_addr).s_addr;
+            ulDestIP=(*(in_addr*)pHostent->h_addr).s_addr;
         }
         else
         {
-            cout<<"è¾“å…¥çš„IPåœ°å€æˆ–åŸŸåæ— æ•ˆ!"<<endl;
+            cout<<"ÊäÈëµÄIPµØÖ·»òÓòÃûÎŞĞ§"<<endl;
             WSACleanup();
-            return;
+            return 0;
         }
     }
-    cout<<"Tracing roote to "<<IpAddress<<" with a maximum of 30 hops.\n"<<endl;
-
-    //å¡«å……ç›®çš„ç«¯socketåœ°å€
+    cout<<"Tracing route to "<<IpAddress<<" with a maximum of 30 hops.\n"<<endl;
+    //Ìî³äÄ¿µÄ¶ËsocketµØÖ·
     sockaddr_in destSockAddr;
-    ZeroMemory( &destSockAddr, sizeof( sockaddr_in ) );
-    destSockAddr.sin_family = AF_INET;
-    destSockAddr.sin_addr.s_addr = ulDestIP;
+    ZeroMemory(&destSockAddr,sizeof(sockaddr_in));
+    destSockAddr.sin_family=AF_INET;
+    destSockAddr.sin_addr.s_addr=ulDestIP;
+    //´´½¨Ô­Ê¼Ì×½Ó×Ö
+    SOCKET sockRaw=WSASocket(AF_INET,SOCK_RAW,IPPROTO_ICMP,NULL,0,WSA_FLAG_OVERLAPPED);
+    //³¬Ê±Ê±¼ä
+    int iTimeout=3000;
+    //½ÓÊÕ³¬Ê±
+    setsockopt(sockRaw,SOL_SOCKET,SO_RCVTIMEO,(char*)&iTimeout,sizeof(iTimeout));
+    //·¢ËÍ³¬Ê±
+    setsockopt(sockRaw,SOL_SOCKET,SO_SNDTIMEO,(char*)&iTimeout,sizeof(iTimeout));
+    //¹¹ÔìICMP»ØÏÔÇëÇóÏûÏ¢£¬²¢ÒÔTTLµİÔöµÄË³Ğò·¢ËÍ±¨ÎÄ
+    //ICMPÀàĞÍ×Ö¶Î
+    const BYTE ICMP_ECHO_REQUEST=8;   //ÇëÇó»ØÏÔ
+    const BYTE ICMP_ECHO_REPLY=0;     //»ØÏÔÓ¦´ğ
+    const BYTE ICMP_TIMEOUT=11;       //´«Êä³¬Ê±
 
-    //åˆ›å»ºåŸå§‹å¥—æ¥å­—
-    SOCKET sockRaw = WSASocket( AF_INET, SOCK_RAW, IPPROTO_ICMP, NULL, 0, WSA_FLAG_OVERLAPPED );
+    //ÆäËû³£Á¿¶¨Òå
+    const int DEF_ICMP_DATA_SIZE=32;    //ICMP±¨ÎÄÄ¬ÈÏÊı¾İ×Ö¶Î³¤¶È
+    const int MAX_ICMP_PACKET_SIZE=1024; //ICMP±¨ÎÄ×î´ó³¤¶È£¨°üÀ¨±¨Í·£©
+    const DWORD DEF_ICMP_TIMEOUT=3000;   //»ØÏÔÓ¦´ğ³¬Ê±Ê±¼ä
+    const int DEF_MAX_HOP=30;            //×î´óÌøÕ¾Êı
 
-    //è¶…æ—¶æ—¶é—´
-    int iTimeout = 3000;
+    //Ìî³äICMP±¨ÎÄÖĞÃ¿´Î·¢ËÍÊ±²»±äµÄ×Ö¶Î
+    char IcmpSendBuf[sizeof(ICMP_HEADER)+DEF_ICMP_DATA_SIZE]; //·¢ËÍ»º³åÇø
+    memset(IcmpSendBuf,0,sizeof(IcmpSendBuf));     //³õÊ¼»¯·¢ËÍ»º³åÇø
+    char IcmpRecvBuf[MAX_ICMP_PACKET_SIZE];        //½ÓÊÕ»º³åÇø
+    memset(IcmpRecvBuf,0,sizeof(IcmpRecvBuf));     //³õÊ¼»¯½ÓÊÕ»º³åÇø
 
-    //è®¾ç½®æ¥æ”¶è¶…æ—¶æ—¶é—´
-    setsockopt( sockRaw, SOL_SOCKET, SO_RCVTIMEO, (char *)&iTimeout, sizeof( iTimeout ) );
+    ICMP_HEADER *pIcmpHeader=(ICMP_HEADER*)IcmpSendBuf;
+    pIcmpHeader->type=ICMP_ECHO_REQUEST;             //ÀàĞÍÎªÇëÇó»ØÏÔ
+    pIcmpHeader->code=0;                             //´úÂë×Ö¶ÎÎª0
+    pIcmpHeader->id=(USHORT)GetCurrentProcessId();   //ID×Ö¶ÎÎªµ±Ç°½ø³ÌºÅ
+    memset(IcmpSendBuf+sizeof(ICMP_HEADER),'E',DEF_ICMP_DATA_SIZE);   //Êı¾İ×Ö¶Î
 
-    //è®¾ç½®å‘é€è¶…æ—¶æ—¶é—´
-    setsockopt(sockRaw,SOL_SOCKET,SO_SNDTIMEO,(char *)&iTimeout,sizeof(iTimeout));
-
-    //æ„é€ ICMPå›æ˜¾è¯·æ±‚æ¶ˆæ¯ï¼Œå¹¶ä»¥TTLé€’å¢çš„é¡ºåºå‘é€æŠ¥æ–‡
-    //ICMPç±»å‹å­—æ®µ
-    const BYTE ICMP_ECHO_REQUEST = 8;    //è¯·æ±‚å›æ˜¾
-    const BYTE ICMP_ECHO_REPLY   = 0;    //å›æ˜¾åº”ç­”
-    const BYTE ICMP_TIMEOUT      = 11;   //ä¼ è¾“è¶…æ—¶
-
-    //å…¶ä»–å¸¸é‡å®šä¹‰
-    const int DEF_ICMP_DATA_SIZE   = 32;    //ICMPæŠ¥æ–‡é»˜è®¤æ•°æ®å­—æ®µé•¿åº¦
-    const int MAX_ICMP_PACKET_SIZE = 1024;  //ICMPæŠ¥æ–‡æœ€å¤§é•¿åº¦ï¼ˆåŒ…æ‹¬æŠ¥å¤´ï¼‰
-    const DWORD DEF_ICMP_TIMEOUT   = 3000;  //å›æ˜¾åº”ç­”è¶…æ—¶æ—¶é—´
-    const int DEF_MAX_HOP          = 30;    //æœ€å¤§è·³ç«™æ•°
-
-    //å¡«å……ICMPæŠ¥æ–‡ä¸­æ¯æ¬¡å‘é€æ—¶ä¸å˜çš„å­—æ®µ
-    char IcmpSendBuf[ sizeof( ICMP_HEADER ) + DEF_ICMP_DATA_SIZE ];//å‘é€ç¼“å†²åŒº
-    memset( IcmpSendBuf, 0, sizeof( IcmpSendBuf ) );               //åˆå§‹åŒ–å‘é€ç¼“å†²åŒº
-    char IcmpRecvBuf[ MAX_ICMP_PACKET_SIZE ];                      //æ¥æ”¶ç¼“å†²åŒº
-    memset( IcmpRecvBuf, 0, sizeof( IcmpRecvBuf ) );               //åˆå§‹åŒ–æ¥æ”¶ç¼“å†²åŒº
-
-    ICMP_HEADER * pIcmpHeader = ( ICMP_HEADER* )IcmpSendBuf;
-    pIcmpHeader->type = ICMP_ECHO_REQUEST; //ç±»å‹ä¸ºè¯·æ±‚å›æ˜¾
-    pIcmpHeader->code = 0;                //ä»£ç å­—æ®µä¸º0
-    pIcmpHeader->id   = (USHORT)GetCurrentProcessId();    //IDå­—æ®µä¸ºå½“å‰è¿›ç¨‹å·
-    memset( IcmpSendBuf + sizeof( ICMP_HEADER ), 'E', DEF_ICMP_DATA_SIZE );//æ•°æ®å­—æ®µ
-
-    USHORT usSeqNo      = 0;            //ICMPæŠ¥æ–‡åºåˆ—å·
-    int iTTL            = 1;            //TTLåˆå§‹å€¼ä¸º1
-    BOOL bReachDestHost = FALSE;        //å¾ªç¯é€€å‡ºæ ‡å¿—
-    int iMaxHot         = DEF_MAX_HOP;  //å¾ªç¯çš„æœ€å¤§æ¬¡æ•°
-    DECODE_RESULT DecodeResult;    //ä¼ é€’ç»™æŠ¥æ–‡è§£ç å‡½æ•°çš„ç»“æ„åŒ–å‚æ•°
-    while( !bReachDestHost && iMaxHot-- )
+    USHORT usSeqNo=0;                //ICMP±¨ÎÄĞòÁĞºÅ
+    int iTTL=1;                      //TTL³õÊ¼ÖµÎª1
+    BOOL bReachDestHost=FALSE;       //Ñ­»·ÍË³ö±êÖ¾
+    int iMaxHot=DEF_MAX_HOP;         //Ñ­»·µÄ×î´ó´ÎÊı
+    DECODE_RESULT DecodeResult;      //´«µİ¸ø±¨ÎÄ½âÂëº¯ÊıµÄ½á¹¹»¯²ÎÊı
+    while(!bReachDestHost&&iMaxHot--)
     {
-        //è®¾ç½®IPæŠ¥å¤´çš„TTLå­—æ®µ
-        setsockopt( sockRaw, IPPROTO_IP, IP_TTL, (char *)&iTTL, sizeof(iTTL) );
-        cout<<iTTL<<flush;    //è¾“å‡ºå½“å‰åºå·,flushè¡¨ç¤ºå°†ç¼“å†²åŒºçš„å†…å®¹é©¬ä¸Šé€è¿›cout,æŠŠè¾“å‡ºç¼“å†²åŒºåˆ·æ–°
+        //ÉèÖÃIP±¨Í·µÄTTL×Ö¶Î
+        setsockopt(sockRaw,IPPROTO_IP,IP_TTL,(char*)&iTTL,sizeof(iTTL));
+        cout<<iTTL<<flush;       //Êä³öµ±Ç°ĞòºÅ
+        //Ìî³äICMP±¨ÎÄÖĞÃ¿´Î·¢ËÍ±ä»¯µÄ×Ö¶Î
+        ((ICMP_HEADER*)IcmpSendBuf)->cksum=0;                 //Ğ§ÑéºÍÏÈÖÃÎª0
+        ((ICMP_HEADER*)IcmpSendBuf)->seq=htons(usSeqNo++);    //Ìî³äĞòÁĞºÅ
+        ((ICMP_HEADER*)IcmpSendBuf)->cksum=checksum((USHORT*)IcmpSendBuf,sizeof(ICMP_HEADER)+DEF_ICMP_DATA_SIZE);  //¼ÆËãĞ§ÑéºÍ
 
-        //å¡«å……ICMPæŠ¥æ–‡ä¸­æ¯æ¬¡å‘é€å˜åŒ–çš„å­—æ®µ
-        ((ICMP_HEADER *)IcmpSendBuf)->cksum = 0;                   //æ ¡éªŒå’Œå…ˆç½®ä¸º0
-        ((ICMP_HEADER *)IcmpSendBuf)->seq   = htons(usSeqNo++);    //å¡«å……åºåˆ—å·
-        ((ICMP_HEADER *)IcmpSendBuf)->cksum = 
-            checksum( ( USHORT * )IcmpSendBuf, sizeof( ICMP_HEADER ) + DEF_ICMP_DATA_SIZE ); //è®¡ç®—æ ¡éªŒå’Œ
-
-        //è®°å½•åºåˆ—å·å’Œå½“å‰æ—¶é—´
-        DecodeResult.usSeqNo         = ( ( ICMP_HEADER* )IcmpSendBuf )->seq;    //å½“å‰åºå·
-        DecodeResult.dwRoundTripTime = GetTickCount();                          //å½“å‰æ—¶é—´
-
-        //å‘é€TCPå›æ˜¾è¯·æ±‚ä¿¡æ¯
-        sendto( sockRaw, IcmpSendBuf, sizeof(IcmpSendBuf), 0, (sockaddr*)&destSockAddr, sizeof(destSockAddr) );
-
-        //æ¥æ”¶ICMPå·®é”™æŠ¥æ–‡å¹¶è¿›è¡Œè§£æå¤„ç†
-        sockaddr_in from;           //å¯¹ç«¯socketåœ°å€
-        int iFromLen = sizeof(from);//åœ°å€ç»“æ„å¤§å°
-        int iReadDataLen;           //æ¥æ”¶æ•°æ®é•¿åº¦
+        //¼ÇÂ¼ĞòÁĞºÅºÍµ±Ç°Ê±¼ä
+        DecodeResult.usSeqNo=((ICMP_HEADER*)IcmpSendBuf)->seq;    //µ±Ç°ĞòºÅ
+        DecodeResult.dwRoundTripTime=GetTickCount();              //µ±Ç°Ê±¼ä
+        //·¢ËÍTCP»ØÏÔÇëÇóĞÅÏ¢
+        sendto(sockRaw,IcmpSendBuf,sizeof(IcmpSendBuf),0,(sockaddr*)&destSockAddr,sizeof(destSockAddr));
+        //½ÓÊÕICMP²î´í±¨ÎÄ²¢½øĞĞ½âÎö´¦Àí
+        sockaddr_in from;              //¶Ô¶ËsocketµØÖ·
+        int iFromLen=sizeof(from);     //µØÖ·½á¹¹´óĞ¡
+        int iReadDataLen;              //½ÓÊÕÊı¾İ³¤¶È
         while(1)
         {
-            //æ¥æ”¶æ•°æ®
-            iReadDataLen = recvfrom( sockRaw, IcmpRecvBuf, MAX_ICMP_PACKET_SIZE, 0, (sockaddr*)&from, &iFromLen );
-            if( iReadDataLen != SOCKET_ERROR )//æœ‰æ•°æ®åˆ°è¾¾
+            //½ÓÊÕÊı¾İ
+            iReadDataLen=recvfrom(sockRaw,IcmpRecvBuf,MAX_ICMP_PACKET_SIZE,0,(sockaddr*)&from,&iFromLen);
+            if(iReadDataLen!=SOCKET_ERROR)//ÓĞÊı¾İ´ïµ½
             {
-                //å¯¹æ•°æ®åŒ…è¿›è¡Œè§£ç 
-                if(DecodeIcmpResponse( IcmpRecvBuf, iReadDataLen, DecodeResult, ICMP_ECHO_REPLY, ICMP_TIMEOUT ) )
+                //¶ÔÊı¾İ°ü½øĞĞ½âÂë
+                if(DecodeIcmpResponse(IcmpRecvBuf,iReadDataLen,DecodeResult,ICMP_ECHO_REPLY,ICMP_TIMEOUT))
                 {
-                    //åˆ°è¾¾ç›®çš„åœ°ï¼Œé€€å‡ºå¾ªç¯
-                    if( DecodeResult.dwIPaddr.s_addr == destSockAddr.sin_addr.s_addr )
-                        bReachDestHost = true;
-                    //è¾“å‡ºIPåœ°å€
-                    cout<<'\t'<<inet_ntoa( DecodeResult.dwIPaddr )<<endl;
+                    //µ½´ïÄ¿µÄµØ£¬ÍË³öÑ­»·
+                    if(DecodeResult.dwIPaddr.s_addr==destSockAddr.sin_addr.s_addr)
+                        bReachDestHost=true;
+                    //Êä³öIPµØÖ·
+                    cout<<'\t'<<inet_ntoa(DecodeResult.dwIPaddr)<<endl;
                     break;
                 }
             }
-            else if( WSAGetLastError() == WSAETIMEDOUT )    //æ¥æ”¶è¶…æ—¶ï¼Œè¾“å‡º*å·
+            else if(WSAGetLastError()==WSAETIMEDOUT) //½ÓÊÕ³¬Ê±£¬Êä³öĞÇºÅ
             {
-                cout<<"         *"<<'\t'<<"Request timed out."<<endl;
+                cout<<"          *"<<'\t'<<"Request timed out"<<endl;
                 break;
             }
             else
-            {
+           {
                 break;
             }
         }
-        iTTL++;    //é€’å¢TTLå€¼
+        iTTL++;   //µİÔöTTLÖµ
     }
 }

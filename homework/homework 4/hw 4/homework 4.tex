@@ -14,7 +14,7 @@ proofname = \heiti{证明}
 \lstset{breaklines}  %让LaTeX自动将长的代码行换行排版
 \lstset{extendedchars=false}   %这一条命令可以解决代码跨页时，章节标题，页眉等汉字不显示的问题
 \lstset{
-    language=C, %用于设置语言为C++
+    language=C++, %用于设置语言为C++
     identifierstyle=,
     basicstyle=\ttfamily,
     stringstyle=\ttfamily,
@@ -150,7 +150,7 @@ proofname = \heiti{证明}
     };
 \end{lstlisting}
 程序运行结果如图1所示：
-\begin{figure}[h]
+\begin{figure}[htbp]
     \centering
     \includegraphics[width=1\textwidth]{ping.png}
     \caption{ping.c运行结果}
@@ -197,6 +197,27 @@ proofname = \heiti{证明}
     }DECODE_RESULT;
 \end{lstlisting}
 \subsection{用实现的tracert程序查询到jd.com的每一跳路由器IP地址，查询IP名称并分析层级关系，画出一个可能的IP层次关系图}
+程序运行结果如图2所示：\\
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=1\textwidth]{tracert}
+    \caption{tracert.cpp运行结果}
+    \label{tracert}
+\end{figure}
+IP名称如下图3所示：\\
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=1\textwidth]{tracert_path}
+    \caption{tracert.cpp运行结果}
+    \label{tracert_path}
+\end{figure}
+层级关系如下图4所示：\\
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=1\textwidth]{tracert_level}
+    \caption{可能的层次关系}
+    \label{tracert_level}
+\end{figure}
 
 \section{程序源码}
 \subsection{ping.c}
