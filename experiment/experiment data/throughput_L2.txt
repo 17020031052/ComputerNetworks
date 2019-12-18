@@ -1,0 +1,6 @@
+This is server mode.
+This is client mode.
+sent=103096KB rate=5.1548Mbps
+
+received=95292KB rate=4.100344234079174Mbps
+
